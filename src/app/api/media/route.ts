@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { readdir, stat } from "node:fs/promises";
-import path from "node:path";
+import { list } from "@vercel/blob";
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET() {
@@ -10,27 +9,17 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const base = path.join(process.cwd(), "public", "uploads");
-  const files: { url: string; kind: "image" | "video"; size: number; name: string }[] = [];
+  const { blobs } = await list({ prefix: "uploads/" });
 
-  for (const kind of ["images", "videos"] as const) {
-    try {
-      const dir = path.join(base, kind);
-      const entries = await readdir(dir, { withFileTypes: true });
-      for (const e of entries) {
-        if (!e.isFile()) continue;
-        const s = await stat(path.join(dir, e.name));
-        files.push({
-          url: `/uploads/${kind}/${e.name}`,
-          kind: kind === "videos" ? "video" : "image",
-          size: s.size,
-          name: e.name,
-        });
-      }
-    } catch {
-      // directory missing
-    }
-  }
+  const files = blobs.map((b) => {
+    const isVideo = b.pathname.includes("/videos/");
+    return {
+      url: b.url,
+      kind: isVideo ? "video" : "image",
+      size: b.size,
+      name: b.pathname.split("/").pop() ?? b.url,
+    };
+  });
 
   files.sort((a, b) => b.name.localeCompare(a.name));
 

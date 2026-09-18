@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir, unlink } from "node:fs/promises";
-import path from "node:path";
+import { put, del } from "@vercel/blob";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { getSessionUser } from "@/lib/auth";
 
 const ALLOWED_IMAGE = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"];
@@ -31,16 +31,20 @@ export async function POST(req: Request) {
 
   const kind = isVideo ? "videos" : "images";
   const ext = path.extname(file.name) || (isImage ? ".jpg" : ".mp4");
-  const filename = `${randomUUID()}${ext}`;
-  const dir = path.join(process.cwd(), "public", "uploads", kind);
-  await mkdir(dir, { recursive: true });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await writeFile(path.join(dir, filename), buffer);
+  const pathname = `uploads/${kind}/${randomUUID()}${ext}`;
+  const blob = await put(pathname, file, {
+    access: "public",
+    addRandomSuffix: false,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
+  });
 
-  const url = `/uploads/${kind}/${filename}`;
-
-  return NextResponse.json({ url, kind: isVideo ? "video" : "image", filename });
+  const filename = pathname.split("/").pop() ?? "";
+  return NextResponse.json({
+    url: blob.url,
+    kind: isVideo ? "video" : "image",
+    filename,
+  });
 }
 
 export async function DELETE(req: Request) {
@@ -50,19 +54,14 @@ export async function DELETE(req: Request) {
   }
 
   const { url } = await req.json();
-  if (!url || typeof url !== "string") {
-    return NextResponse.json({ error: "Missing url" }, { status: 400 });
-  }
-
-  const absPath = path.join(process.cwd(), "public", url);
-  if (!absPath.startsWith(path.join(process.cwd(), "public", "uploads"))) {
-    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+  if (!url || typeof url !== "string" || !url.startsWith("https://")) {
+    return NextResponse.json({ error: "Invalid url" }, { status: 400 });
   }
 
   try {
-    await unlink(absPath);
+    await del(url, { token: process.env.BLOB_READ_WRITE_TOKEN });
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "File not found" }, { status: 404 });
+    return NextResponse.json({ error: "Blob not found" }, { status: 404 });
   }
 }
