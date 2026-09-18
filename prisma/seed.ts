@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+const LISTING_FEE = 100000; // one-time UGX fee to publish a listing (mirrors src/lib/types.ts)
+
 async function upsertUser(
   name: string,
   email: string,

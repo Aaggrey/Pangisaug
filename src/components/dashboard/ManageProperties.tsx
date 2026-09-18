@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Trash2, Star, RefreshCw, Loader2, CheckCircle2, Pencil } from "lucide-react";
+import { Trash2, Star, RefreshCw, Loader2, CheckCircle2, Pencil, Wallet, Wallet2, Loader2 as Spin } from "lucide-react";
 import { formatUGX, timeAgo } from "@/lib/format";
+import { LISTING_FEE } from "@/lib/types";
+import type { MoMoProvider } from "@/lib/payments";
 
 interface Prop {
   id: string;
@@ -22,6 +24,11 @@ interface Prop {
 export function ManageProperties({ role }: { role: string }) {
   const [items, setItems] = useState<Prop[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [method, setMethod] = useState<MoMoProvider>("MTN_MOMO");
+  const [momoPhone, setMomoPhone] = useState("");
+  const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [promptSent, setPromptSent] = useState(false);
 
   const load = async () => {
     const res = await fetch("/api/properties/manager");

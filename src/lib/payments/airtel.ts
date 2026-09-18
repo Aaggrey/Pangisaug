@@ -11,7 +11,7 @@ export interface AirtelInitiateInput {
 }
 
 export interface AirtelTransactionStatus {
-  status: "SUCCESS" | "PENDING" | "FAILED" | string;
+  status: "SUCCESS" | "PENDING" | "FAILED";
   rawStatus?: string;
   failureReason?: string;
   txnId?: string;
