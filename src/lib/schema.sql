@@ -6,7 +6,7 @@
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS "User" (
-  id            text PRIMARY KEY,
+  id text PRIMARY KEY DEFAULT gen_random_uuid(),
   name          text NOT NULL,
   email         text NOT NULL UNIQUE,
   "passwordHash" text NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS "User" (
 );
 
 CREATE TABLE IF NOT EXISTS "Property" (
-  id           text PRIMARY KEY,
+  id text PRIMARY KEY DEFAULT gen_random_uuid(),
   "landlordId" text NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
   title        text NOT NULL,
   description  text NOT NULL,
@@ -39,15 +39,15 @@ CREATE TABLE IF NOT EXISTS "Property" (
 CREATE INDEX IF NOT EXISTS "Property_landlordId_idx" ON "Property"("landlordId");
 
 CREATE TABLE IF NOT EXISTS "PropertyImage" (
-  id          text PRIMARY KEY,
+  id text PRIMARY KEY DEFAULT gen_random_uuid(),
   "propertyId" text NOT NULL REFERENCES "Property"(id) ON DELETE CASCADE,
   url         text NOT NULL,
   "isCover"   boolean NOT NULL DEFAULT false,
   "createdAt" timestamptz NOT NULL DEFAULT now()
-());
+);
 
 CREATE TABLE IF NOT EXISTS "Payment" (
-  id           text PRIMARY KEY,
+  id text PRIMARY KEY DEFAULT gen_random_uuid(),
   "landlordId" text NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
   "propertyId" text NOT NULL REFERENCES "Property"(id) ON DELETE CASCADE,
   amount       numeric NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS "Payment" (
 );
 
 CREATE TABLE IF NOT EXISTS "VisitBooking" (
-  id             text PRIMARY KEY,
+  id text PRIMARY KEY DEFAULT gen_random_uuid(),
   "userId"       text NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
   "propertyId"   text NOT NULL REFERENCES "Property"(id) ON DELETE CASCADE,
   "visitorName"  text NOT NULL,
