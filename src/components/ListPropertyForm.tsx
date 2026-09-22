@@ -62,12 +62,18 @@ export function ListPropertyForm({ isAdmin }: { isAdmin: boolean }) {
         const fd = new FormData();
         fd.append("file", file);
         const res = await fetch("/api/upload", { method: "POST", body: fd });
-        const data = await res.json();
+        const text = await res.text();
+        let data: { url?: string; error?: string } = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          if (!res.ok) throw new Error("Upload failed (status " + res.status + ")");
+        }
         if (!res.ok) throw new Error(data.error ?? "Upload failed");
         if (kind === "image") {
-          setImages((arr) => (arr.length < 10 ? [...arr, data.url] : arr));
+          setImages((arr) => (arr.length < 10 && data.url ? [...arr, data.url] : arr));
         } else {
-          setVideoUrl(data.url);
+          setVideoUrl(data.url ?? null);
         }
       }
     } catch (e) {
