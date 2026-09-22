@@ -4,7 +4,7 @@ import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { findUserByEmail, createUser } from "@/lib/db";
 import type { SessionUser } from "@/lib/types";
 
 const credentialsSchema = z.object({
@@ -12,7 +12,12 @@ const credentialsSchema = z.object({
   password: z.string().min(6),
 });
 
-export const authConfig = {
+const credentialsSchemaInput = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+});
+
+export const authConfig: NextAuthConfig = {
   trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
@@ -24,12 +29,10 @@ export const authConfig = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const parsed = credentialsSchema.safeParse(credentials);
+        const parsed = credentialsSchemaInput.safeParse(credentials);
         if (!parsed.success) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email.toLowerCase() },
-        });
+        const user = await findUserByEmail(parsed.data.email.toLowerCase());
         if (!user) return null;
 
         const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
@@ -53,16 +56,14 @@ export const authConfig = {
     async signIn({ user, account }) {
       if (account?.provider && account.provider !== "credentials" && user.email) {
         const email = user.email.toLowerCase();
-        let dbUser = await prisma.user.findUnique({ where: { email } });
+        let dbUser = await findUserByEmail(email);
         if (!dbUser) {
-          dbUser = await prisma.user.create({
-            data: {
-              name: user.name ?? email.split("@")[0],
-              email,
-              passwordHash: await bcrypt.hash(randomUUID(), 10),
-              role: "USER",
-              avatar: user.image || null,
-            },
+          dbUser = await createUser({
+            name: user.name ?? email.split("@")[0],
+            email,
+            passwordHash: await bcrypt.hash(randomUUID(), 10),
+            role: "USER",
+            avatar: user.image || null,
           });
         }
       }
@@ -72,9 +73,7 @@ export const authConfig = {
       if (user) {
         const isOAuth = account?.provider && account.provider !== "credentials";
         if (isOAuth && user.email) {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: user.email.toLowerCase() },
-          });
+          const dbUser = await findUserByEmail(user.email.toLowerCase());
           if (dbUser) {
             token.id = dbUser.id;
             token.role = dbUser.role;
@@ -97,7 +96,7 @@ export const authConfig = {
       return session;
     },
   },
-} satisfies NextAuthConfig;
+};
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
 

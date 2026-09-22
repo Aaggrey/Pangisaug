@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { findPropertyById, updateProperty } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 
 export async function POST(
@@ -14,10 +14,9 @@ export async function POST(
   const { id } = await params;
   const { featured } = await req.json();
 
-  const property = await prisma.property.update({
-    where: { id },
-    data: { featured: Boolean(featured) },
-  });
+  const property = await findPropertyById(id);
+  if (!property) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return NextResponse.json({ property });
+  const updated = await updateProperty(id, { featured: Boolean(featured) });
+  return NextResponse.json({ property: updated });
 }

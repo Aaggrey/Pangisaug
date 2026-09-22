@@ -1,56 +1,41 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { findProperties, countProperties, distinctCities, createProperty } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import type { ListingType, PropertyStatus, Prisma } from "@prisma/client";
+import type { ListingType } from "@/lib/types";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const q = searchParams.get("q")?.trim().toLowerCase();
-  const location = searchParams.get("location")?.trim().toLowerCase();
+  const q = searchParams.get("q")?.trim() || undefined;
+  const location = searchParams.get("location")?.trim() || undefined;
   const bedroomsRaw = searchParams.get("bedrooms");
-  const minPrice = searchParams.get("min");
-  const maxPrice = searchParams.get("max");
-  const type = searchParams.get("type");
+  const minPriceRaw = searchParams.get("minPrice") ?? searchParams.get("min");
+  const maxPriceRaw = searchParams.get("maxPrice") ?? searchParams.get("max");
+  const type = searchParams.get("type") as ListingType | null;
   const featured = searchParams.get("featured") === "true";
 
-  const where: Prisma.PropertyWhereInput = {
-    status: "ACTIVE",
-    ...(type === "SALE" || type === "RENT" ? { listingType: type as ListingType } : {}),
-    ...(featured ? { featured: true } : {}),
-    ...(location
-      ? {
-          OR: [
-            { city: { contains: location } },
-            { province: { contains: location } },
-            { address: { contains: location } },
-          ],
-        }
-      : {}),
-    ...(q
-      ? {
-          OR: [
-            { title: { contains: q } },
-            { description: { contains: q } },
-            { city: { contains: q } },
-            { province: { contains: q } },
-          ],
-        }
-      : {}),
-    ...(bedroomsRaw && bedroomsRaw !== "0" ? { bedrooms: { gte: parseInt(bedroomsRaw, 10) } } : {}),
-    ...(minPrice ? { price: { gte: parseInt(minPrice, 10) } } : {}),
-    ...(maxPrice ? { price: { lte: parseInt(maxPrice, 10) } } : {}),
-  };
+  const bedrooms = bedroomsRaw && bedroomsRaw !== "0" ? parseInt(bedroomsRaw, 10) || undefined : undefined;
+  const minPrice = minPriceRaw && minPriceRaw !== "0" ? parseInt(minPriceRaw, 10) || undefined : undefined;
+  const maxPrice = maxPriceRaw ? parseInt(maxPriceRaw, 10) || undefined : undefined;
 
-  const properties = await prisma.property.findMany({
-    where,
-    orderBy: [{ featured: "desc" }, { createdAt: "desc" }],
-    include: {
-      landlord: { select: { id: true, name: true, email: true, avatar: true } },
-      images: { orderBy: { isCover: "desc" } },
-    },
-  });
-
-  return NextResponse.json({ properties });
+  const [properties, total, cities] = await Promise.all([
+    findProperties({
+      status: "ACTIVE",
+      listingType: type === "SALE" || type === "RENT" ? type : undefined,
+      featuredOnly: featured || undefined,
+      bedrooms,
+      min: minPrice,
+      max: maxPrice,
+      q,
+      location,
+      includeLandlord: true,
+      includeImages: true,
+      orderBy: "featuredDesc",
+      take: 100,
+    }),
+    countProperties({ status: "ACTIVE" }),
+    distinctCities(),
+  ]);
+  return NextResponse.json({ properties, total, cities });
 }
 
 export async function POST(req: Request) {
@@ -84,28 +69,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "At least one image is required" }, { status: 400 });
     }
 
-    const property = await prisma.property.create({
-      data: {
-        title,
-        description,
-        price: parseInt(String(price), 10),
-        address,
-        city,
-        province: province || null,
-        bedrooms: parseInt(String(bedrooms), 10),
-        bathrooms: bathrooms ? parseFloat(String(bathrooms)) : 1,
-        areaSqm: areaSqm ? parseFloat(String(areaSqm)) : null,
-        listingType: listingType === "RENT" ? "RENT" : "SALE",
-        status: user.role === "ADMIN" ? "ACTIVE" : "PENDING_PAYMENT",
-        videoUrl: videoUrl || null,
-        landlordId: user.id,
-        images: {
-          create: (images as { url: string; isCover?: boolean }[]).map(
-            (img, idx) => ({ url: img.url, isCover: idx === 0 })
-          ),
-        },
-      },
-      include: { images: true },
+    const property = await createProperty({
+      landlordId: user.id,
+      title,
+      description,
+      price: parseInt(String(price), 10),
+      address,
+      city,
+      province: province || null,
+      bedrooms: parseInt(String(bedrooms), 10),
+      bathrooms: bathrooms ? parseFloat(String(bathrooms)) : 1,
+      areaSqm: areaSqm ? parseFloat(String(areaSqm)) : null,
+      listingType: listingType === "RENT" ? "RENT" : "SALE",
+      status: user.role === "ADMIN" ? "ACTIVE" : "PENDING_PAYMENT",
+      videoUrl: videoUrl || null,
+      images: (images as { url: string; isCover?: boolean }[]).map((img, idx) => ({
+        url: img.url,
+        isCover: idx === 0,
+      })),
     });
 
     return NextResponse.json({ property }, { status: 201 });

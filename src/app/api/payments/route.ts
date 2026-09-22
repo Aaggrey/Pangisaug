@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { listPayments, findPropertyById, findUserById } from "@/lib/db";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -9,17 +9,41 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const where = user.role === "ADMIN" ? {} : { landlordId: user.id };
-
-  const payments = await prisma.payment.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      property: { select: { id: true, title: true } },
-      landlord: { select: { id: true, name: true, email: true } },
-    },
-    take: 100,
+  const rows = await listPayments({
+    landlordId: user.role === "ADMIN" ? undefined : user.id,
+    limit: 100,
   });
+
+  const payments = await Promise.all(
+    rows.map(async (p) => {
+      const property = await findPropertyById(p.propertyId);
+      const landlord = await findUserById(p.landlordId);
+      return {
+        id: p.id,
+        landlordId: p.landlordId,
+        propertyId: p.propertyId,
+        amount: p.amount,
+        reference: p.reference,
+        gatewayRef: p.gatewayRef,
+        method: p.method,
+        status: p.status,
+        createdAt: p.createdAt,
+        paidAt: p.paidAt,
+        property: {
+          id: p.propertyId,
+          title: property?.title ?? null,
+          price: property?.price ?? null,
+          city: property?.city ?? null,
+          address: property?.address ?? null,
+        },
+        landlord: {
+          id: p.landlordId,
+          name: landlord?.name ?? "",
+          email: landlord?.email ?? "",
+        },
+      };
+    })
+  );
 
   return NextResponse.json({ payments });
 }

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { prisma } from "@/lib/prisma";
+import {
+  findPropertyById,
+  createPayment,
+  updatePayment,
+  updateProperty,
+} from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { LISTING_FEE } from "@/lib/types";
 
@@ -11,10 +16,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Only landlords can pay listing fees" }, { status: 403 });
   }
 
-  const { propertyId, method } = await req.json();
+  const { propertyId, method } = await req.json().catch(() => ({}));
   if (!propertyId) return NextResponse.json({ error: "Missing property id" }, { status: 400 });
 
-  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  const property = await findPropertyById(propertyId);
   if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
   if (property.landlordId !== user.id) {
     return NextResponse.json({ error: "This is not your property" }, { status: 403 });
@@ -26,23 +31,16 @@ export async function POST(req: Request) {
 
   const reference = `PANG-${randomUUID().slice(0, 8).toUpperCase()}`;
 
-  const [payment] = await prisma.$transaction([
-    prisma.payment.create({
-      data: {
-        landlordId: user.id,
-        propertyId: property.id,
-        amount: LISTING_FEE,
-        reference,
-        method: method || "GCASH",
-        status: "SUCCESS",
-        paidAt: new Date(),
-      },
-    }),
-    prisma.property.update({
-      where: { id: property.id },
-      data: { status: "ACTIVE" },
-    }),
-  ]);
+  const payment = await createPayment({
+    landlordId: user.id,
+    propertyId: property.id,
+    amount: LISTING_FEE,
+    reference,
+    method: method || "GCASH",
+    status: "SUCCESS",
+  });
+  await updatePayment(payment.id, { status: "SUCCESS", paidAt: new Date() });
+  await updateProperty(property.id, { status: "ACTIVE" });
 
   return NextResponse.json({
     payment: { id: payment.id, reference: payment.reference, amount: payment.amount, method: payment.method },

@@ -1,6 +1,6 @@
-import { redirect, notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { findPropertyById } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { EditPropertyForm } from "@/components/dashboard/EditPropertyForm";
 
@@ -16,8 +16,17 @@ export default async function EditPropertyPage({
   if (!user) redirect("/login?callbackUrl=/dashboard");
 
   const { id } = await params;
-  const property = await prisma.property.findUnique({ where: { id } });
-  if (!property) notFound();
+  const property = await findPropertyById(id);
+  if (!property) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-20 text-center">
+        <h1 className="text-2xl font-bold text-slate-900">Property not found</h1>
+        <Link href="/dashboard" className="mt-4 inline-block font-semibold text-brand-600">
+          Back to dashboard
+        </Link>
+      </div>
+    );
+  }
 
   const isAdmin = user.role === "ADMIN";
   const isOwner = property.landlordId === user.id;
@@ -28,7 +37,9 @@ export default async function EditPropertyPage({
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
       <nav className="mb-4 text-xs text-slate-500">
-        <Link href="/dashboard?tab=properties" className="hover:text-brand-700">Dashboard</Link>
+        <Link href="/dashboard?tab=properties" className="hover:text-brand-700">
+          Dashboard
+        </Link>
         <span className="mx-1.5">/</span>
         <span className="text-slate-700">Edit property</span>
       </nav>

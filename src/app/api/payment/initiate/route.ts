@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { prisma } from "@/lib/prisma";
+import {
+  findPropertyById,
+  findPendingPaymentByProperty,
+  createPaymentWithPhone,
+  updatePayment,
+} from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { LISTING_FEE } from "@/lib/types";
 import {
@@ -27,7 +32,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Enter a valid Ugandan mobile money number (e.g. 0701234567)" }, { status: 400 });
   }
 
-  const property = await prisma.property.findUnique({ where: { id: propertyId } });
+  const property = await findPropertyById(propertyId);
   if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
   if (property.landlordId !== user.id) {
     return NextResponse.json({ error: "This is not your property" }, { status: 403 });
@@ -36,9 +41,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "This property is already paid and live" }, { status: 400 });
   }
 
-  const existingPending = await prisma.payment.findFirst({
-    where: { propertyId, status: "PENDING" },
-  });
+  const existingPending = await findPendingPaymentByProperty(propertyId);
   if (existingPending) {
     return NextResponse.json({
       error: "A pending payment already exists for this property",
@@ -54,16 +57,14 @@ export async function POST(req: Request) {
   const reference = `PANG-${randomUUID().slice(0, 8).toUpperCase()}`;
   const momoNumber = normalizeUgPhone(String(phone));
 
-  const payment = await prisma.payment.create({
-    data: {
-      landlordId: user.id,
-      propertyId: property.id,
-      amount: LISTING_FEE,
-      reference,
-      method: method as MoMoProvider,
-      phone: momoNumber,
-      status: "PENDING",
-    },
+  const payment = await createPaymentWithPhone({
+    landlordId: user.id,
+    propertyId: property.id,
+    amount: LISTING_FEE,
+    reference,
+    method: method as MoMoProvider,
+    phone: momoNumber,
+    status: "PENDING",
   });
 
   try {
@@ -74,10 +75,7 @@ export async function POST(req: Request) {
       reference: payment.reference,
     });
 
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { gatewayRef: initiated.gatewayRef },
-    });
+    await updatePayment(payment.id, { gatewayRef: initiated.gatewayRef });
 
     if (initiated.gatewayStatus === "SUCCESS") {
       const { finalizePayment } = await import("@/lib/payments/finalize");
@@ -95,10 +93,7 @@ export async function POST(req: Request) {
       gatewayStatus: initiated.gatewayStatus,
     });
   } catch (e) {
-    await prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: "FAILED" },
-    });
+    await updatePayment(payment.id, { status: "FAILED" });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to start payment" },
       { status: 502 }

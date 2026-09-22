@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import { prisma } from "@/lib/prisma";
+import { getPropertyDetail } from "@/lib/db";
 import { BookVisitModal } from "@/components/BookVisitModal";
 import { PropertyGallery } from "@/components/PropertyGallery";
 import { MapPin, BedDouble, Bath, Maximize, FolderOpen, Calendar, Phone, Package, Moon } from "lucide-react";
@@ -15,15 +15,10 @@ export default async function PropertyDetailPage({
 }) {
   const { id } = await params;
 
-  const property = await prisma.property.findUnique({
-    where: { id },
-    include: {
-      landlord: { select: { id: true, name: true, email: true, avatar: true, phone: true } },
-      images: { orderBy: { isCover: "desc" } },
-    },
-  });
+  const property = await getPropertyDetail(id);
 
   if (!property || property.status !== "ACTIVE") notFound();
+  if (!property.landlord) notFound();
 
   const isRent = property.listingType === "RENT";
 

@@ -1,22 +1,44 @@
-import type { User as PrismaUser, Property, PropertyImage, VisitBooking } from "@prisma/client";
+import type {
+  Role,
+  UserRow,
+  PropertyRow,
+  PropertyImageRow,
+  PaymentRow,
+  VisitBookingRow,
+} from "@/lib/db";
 
 export interface SessionUser {
   id: string;
   name: string;
   email: string;
-  role: string;
-  avatar?: string | null;
+  role: Role;
+  avatar: string | null;
 }
 
-export type Role = "ADMIN" | "USER" | "LANDLORD";
+export interface SessionUserJwt extends SessionUser {
+  passwordHash?: string;
+  phone?: string | null;
+  createdAt?: Date;
+}
 
-export type PropertyWithRelations = Property & {
-  landlord: Pick<PrismaUser, "id" | "name" | "email" | "avatar">;
-  images: PropertyImage[];
-};
+export type SessionUserPublic = Pick<SessionUser, "id" | "name" | "email" | "role" | "avatar">;
 
-export type BookingWithRelations = VisitBooking & {
-  property: Property & { landlord: PrismaUser; images: PropertyImage[] };
-};
+export function toSessionUser(u: UserRow): SessionUserPublic {
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    avatar: u.avatar,
+  };
+}
 
-export const LISTING_FEE = 100000; // UGX listing fee per property
+export type PropertyWithImages = PropertyRow;
+
+export type PropertyWithRelations = PropertyRow & { images: PropertyImageRow[] };
+
+export const LISTING_FEE = 100000;
+
+export type RoleName = Role;
+
+export type ListingType = "SALE" | "RENT";

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { findProperties, countProperties } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET() {
@@ -9,13 +9,17 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const where = user.role === "ADMIN" ? {} : { landlordId: user.id };
+  const landlordId = user.role === "ADMIN" ? undefined : user.id;
 
-  const properties = await prisma.property.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: { images: { orderBy: { isCover: "desc" } } },
-  });
+  const [properties, total] = await Promise.all([
+    findProperties({
+      landlordId,
+      includeImages: true,
+      orderBy: "createdAtDesc",
+      take: 100,
+    }),
+    countProperties({ landlordId }),
+  ]);
 
-  return NextResponse.json({ properties });
+  return NextResponse.json({ properties, total });
 }

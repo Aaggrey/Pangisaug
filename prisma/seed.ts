@@ -1,7 +1,17 @@
-import { PrismaClient, type Role } from "@prisma/client";
+import "dotenv/config";
 import bcrypt from "bcryptjs";
-
-const prisma = new PrismaClient();
+import pool, {
+  createPayment,
+  createUser,
+  findPaymentByReference,
+  findPropertyById,
+  findUserByEmail,
+  findVisitBookingById,
+  updatePayment,
+  updateUser,
+  withTransaction,
+  type Role,
+} from "@/lib/db";
 
 const LISTING_FEE = 100000; // one-time UGX fee to publish a listing (mirrors src/lib/types.ts)
 
@@ -13,10 +23,43 @@ async function upsertUser(
   phone?: string
 ) {
   const passwordHash = await bcrypt.hash(password, 10);
-  return prisma.user.upsert({
-    where: { email },
-    update: { name, passwordHash, role, phone },
-    create: { name, email, passwordHash, role, phone },
+  const existing = await findUserByEmail(email);
+  if (existing) {
+    return (await updateUser(existing.id, { name, passwordHash, role, phone })) ?? existing;
+  }
+  return createUser({ name, email, passwordHash, role, phone });
+}
+
+async function insertVisitBooking(input: {
+  id: string;
+  userId: string;
+  propertyId: string;
+  visitorName: string;
+  phone: string;
+  email: string;
+  preferredDate: string;
+  timeSlot: string;
+  notes?: string | null;
+  status: "PENDING" | "CONFIRMED" | "CANCELLED";
+}): Promise<void> {
+  await withTransaction(async (q) => {
+    await q.run(
+      `INSERT INTO "VisitBooking" (id, "userId", "propertyId", "visitorName", phone, email, "preferredDate", "timeSlot", notes, status, "createdAt", "updatedAt")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now(), now())
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        input.id,
+        input.userId,
+        input.propertyId,
+        input.visitorName,
+        input.phone,
+        input.email,
+        input.preferredDate,
+        input.timeSlot,
+        input.notes ?? null,
+        input.status,
+      ]
+    );
   });
 }
 
@@ -158,7 +201,7 @@ async function main() {
     },
   ];
 
-  const created = [];
+  const created: string[] = [];
   for (let i = 0; i < props.length; i++) {
     const p = props[i];
     const landlord = [landlord1, landlord2, landlord3][i % 3];
@@ -168,40 +211,52 @@ async function main() {
       ? "A 3-bedroom duplex in Bacolod. The owner is yet to complete the listing fee — shown here to demonstrate the pending payment workflow."
       : p.description;
 
-    const property = await prisma.property.upsert({
-      where: { id: `seed-prop-${i + 1}` },
-      update: {},
-      create: {
-        id: `seed-prop-${i + 1}`,
-        title,
-        description,
-        price: p.price,
-        address: p.address,
-        city: p.city,
-        province: p.province,
-        bedrooms: p.bedrooms,
-        bathrooms: p.bathrooms,
-        areaSqm: p.areaSqm,
-        listingType: p.listingType,
-        status: isPending ? "PENDING_PAYMENT" : "ACTIVE",
-        featured: !isPending && i < 4,
-        landlordId: landlord.id,
-        images: {
-          create: p.images.map((url, idx) => ({ url, isCover: idx === 0 })),
-        },
-      },
-    });
+    const propertyId = `seed-prop-${i + 1}`;
+    const existingProperty = await findPropertyById(propertyId);
+    if (!existingProperty) {
+      await withTransaction(async (q) => {
+        const inserted = await q.query(
+          `INSERT INTO "Property" (id, "landlordId", title, description, price, address, city, province, bedrooms, bathrooms, "areaSqm", "listingType", status, featured, "createdAt", "updatedAt")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now(), now())
+           ON CONFLICT (id) DO NOTHING
+           RETURNING id`,
+          [
+            propertyId,
+            landlord.id,
+            title,
+            description,
+            p.price,
+            p.address,
+            p.city,
+            p.province,
+            p.bedrooms,
+            p.bathrooms,
+            p.areaSqm,
+            p.listingType,
+            isPending ? "PENDING_PAYMENT" : "ACTIVE",
+            !isPending && i < 4,
+          ]
+        );
+        if (inserted.length > 0) {
+          for (let idx = 0; idx < p.images.length; idx++) {
+            await q.run(
+              `INSERT INTO "PropertyImage" ("propertyId", url, "isCover", "createdAt") VALUES ($1,$2,$3, now())`,
+              [propertyId, p.images[idx], idx === 0]
+            );
+          }
+        }
+      });
+    }
 
-    created.push(property.id);
+    created.push(propertyId);
 
     if (i === 0) {
-      await prisma.visitBooking.upsert({
-        where: { id: "seed-booking-1" },
-        update: {},
-        create: {
+      const existingBooking = await findVisitBookingById("seed-booking-1");
+      if (!existingBooking) {
+        await insertVisitBooking({
           id: "seed-booking-1",
           userId: member.id,
-          propertyId: property.id,
+          propertyId,
           visitorName: "Carla Lim",
           phone: "0920 111 2222",
           email: member.email,
@@ -209,37 +264,35 @@ async function main() {
           timeSlot: "10:00 – 11:00",
           notes: "Interested in the property, will bring family.",
           status: "PENDING",
-        },
-      });
-      await prisma.payment.upsert({
-        where: { reference: "SEED-PAY-0001" },
-        update: {},
-        create: {
-          reference: "SEED-PAY-0001",
+        });
+      }
+      const existingPayment = await findPaymentByReference("SEED-PAY-0001");
+      if (!existingPayment) {
+        const payment = await createPayment({
           landlordId: landlord.id,
-          propertyId: property.id,
+          propertyId,
           amount: LISTING_FEE,
+          reference: "SEED-PAY-0001",
           method: "GCASH",
           status: "SUCCESS",
-          paidAt: new Date(),
-        },
-      });
+        });
+        await updatePayment(payment.id, { paidAt: new Date() });
+      }
     }
-    await prisma.visitBooking.upsert({
-      where: { id: `seed-booking-${i + 2}` },
-      update: {},
-      create: {
+    const existingBooking2 = await findVisitBookingById(`seed-booking-${i + 2}`);
+    if (!existingBooking2) {
+      await insertVisitBooking({
         id: `seed-booking-${i + 2}`,
         userId: member2.id,
-        propertyId: property.id,
+        propertyId,
         visitorName: "Berto Garcia",
         phone: "0921 333 4444",
         email: member2.email,
         preferredDate: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
         timeSlot: i % 2 === 0 ? "14:00 – 15:00" : "09:00 – 10:00",
         status: i % 3 === 0 ? "CONFIRMED" : "PENDING",
-      },
-    });
+      });
+    }
   }
 
   console.log(`Seeded ${created.length} properties.`);
@@ -254,4 +307,4 @@ main()
     console.error(e);
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .finally(() => pool.end());

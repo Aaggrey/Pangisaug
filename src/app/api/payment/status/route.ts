@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { findPaymentById } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { checkGatewayPayment, type MoMoProvider } from "@/lib/payments";
 
@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const paymentId = url.searchParams.get("paymentId");
   if (!paymentId) return NextResponse.json({ error: "Missing payment id" }, { status: 400 });
 
-  const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+  const payment = await findPaymentById(paymentId);
   if (!payment) return NextResponse.json({ error: "Payment not found" }, { status: 404 });
   if (user.role !== "ADMIN" && payment.landlordId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -38,14 +38,14 @@ export async function GET(req: Request) {
     if (result.status === "SUCCESS") {
       const { finalizePayment } = await import("@/lib/payments/finalize");
       await finalizePayment(payment.id);
-      const updated = await prisma.payment.findUnique({ where: { id: payment.id } });
+      const updated = await findPaymentById(payment.id);
       return NextResponse.json({ status: "SUCCESS", payment: updated });
     }
 
     if (result.status === "FAILED") {
       const { failPayment } = await import("@/lib/payments/finalize");
       await failPayment(payment.id, result.reason);
-      const updated = await prisma.payment.findUnique({ where: { id: payment.id } });
+      const updated = await findPaymentById(payment.id);
       return NextResponse.json({ status: "FAILED", payment: updated, reason: result.reason });
     }
 

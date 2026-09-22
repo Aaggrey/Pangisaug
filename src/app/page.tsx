@@ -1,35 +1,36 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import {
+  findProperties,
+  countProperties,
+} from "@/lib/db";
+import type { PropertyWithRelations } from "@/lib/types";
 import { HeroSlider } from "@/components/HeroSlider";
 import { SearchBox } from "@/components/SearchBox";
 import { PropertyCard } from "@/components/PropertyCard";
-import { ArrowRight, ShieldCheck, Wallet, Video, Home as HomeIcon } from "lucide-react";
+import { ArrowRight, ShieldCheck, Wallet, Video, Home as HomeIcon, Building2 } from "lucide-react";
+import { formatUGX } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [featured, recent] = await Promise.all([
-    prisma.property.findMany({
-      where: { status: "ACTIVE", featured: true },
+  const [featured, recent, total] = await Promise.all([
+    findProperties({
+      status: "ACTIVE",
+      featuredOnly: true,
       take: 3,
-      orderBy: { updatedAt: "desc" },
-      include: {
-        landlord: { select: { id: true, name: true, email: true, avatar: true } },
-        images: { orderBy: { isCover: "desc" } },
-      },
+      orderBy: "featuredDesc",
+      includeLandlord: true,
+      includeImages: true,
     }),
-    prisma.property.findMany({
-      where: { status: "ACTIVE" },
+    findProperties({
+      status: "ACTIVE",
       take: 6,
-      orderBy: { createdAt: "desc" },
-      include: {
-        landlord: { select: { id: true, name: true, email: true, avatar: true } },
-        images: { orderBy: { isCover: "desc" } },
-      },
+      orderBy: "createdAtDesc",
+      includeLandlord: true,
+      includeImages: true,
     }),
+    countProperties({ status: "ACTIVE" }),
   ]);
-
-  const total = await prisma.property.count({ where: { status: "ACTIVE" } });
 
   return (
     <>
@@ -38,7 +39,7 @@ export default async function Home() {
         <SearchBox />
       </section>
 
-      <section className="pt-32 md:pt-28">
+      <section className="py-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid gap-4 sm:grid-cols-3">
             {[
@@ -61,7 +62,7 @@ export default async function Home() {
       </section>
 
       {featured.length > 0 && (
-        <section className="py-16">
+        <section className="py-16 pt-0">
           <div className="mx-auto max-w-7xl px-4 sm:px-6">
             <div className="mb-6 flex items-end justify-between">
               <div>
@@ -77,7 +78,7 @@ export default async function Home() {
             </div>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {featured.map((p) => (
-                <PropertyCard key={p.id} property={p} />
+                <PropertyCard key={p.id} property={p as PropertyWithRelations} />
               ))}
             </div>
           </div>
@@ -93,7 +94,7 @@ export default async function Home() {
             </div>
             <Link
               href="/properties"
-              className="flex items-center gap-1.5 text-sm font-semibold text-brand-700 hover:text-brand-800 sm:hidden"
+              className="hidden items-center gap-1.5 text-sm font-semibold text-brand-700 hover:text-brand-800 sm:flex"
             >
               Browse all <ArrowRight className="size-4" />
             </Link>
@@ -101,12 +102,12 @@ export default async function Home() {
           {recent.length > 0 ? (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {recent.map((p) => (
-                <PropertyCard key={p.id} property={p} />
+                <PropertyCard key={p.id} property={p as PropertyWithRelations} />
               ))}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-12 text-center">
-              <HomeIcon className="mx-auto size-10 text-slate-400" />
+              <Building2 className="mx-auto size-10 text-slate-400" />
               <h3 className="mt-4 text-lg font-semibold text-slate-900">No listings yet</h3>
               <p className="mt-1 text-sm text-slate-600">
                 Be the first owner to feature a property on Pangisaug.

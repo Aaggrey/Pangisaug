@@ -1,35 +1,20 @@
-import { prisma } from "@/lib/prisma";
+import { findPaymentById, updatePayment, updateProperty, withTransaction } from "@/lib/db";
 
 export async function finalizePayment(paymentId: string) {
-  const payment = await prisma.payment.findUnique({
-    where: { id: paymentId },
-  });
+  const payment = await findPaymentById(paymentId);
   if (!payment) throw new Error("Payment not found");
 
   if (payment.status !== "SUCCESS") {
-    await prisma.$transaction([
-      prisma.payment.update({
-        where: { id: paymentId },
-        data: { status: "SUCCESS", paidAt: new Date() },
-      }),
-      prisma.property.update({
-        where: { id: payment.propertyId },
-        data: { status: "ACTIVE" },
-      }),
-    ]);
+    await withTransaction(async (q) => {
+      await q.run(`UPDATE "Payment" SET status = 'SUCCESS', "paidAt" = now() WHERE id = $1`, [paymentId]);
+      await q.run(`UPDATE "Property" SET status = 'ACTIVE', "updatedAt" = now() WHERE id = $1`, [payment.propertyId]);
+    });
   }
 
-  const updated = await prisma.payment.findUnique({
-    where: { id: paymentId },
-    include: { property: { select: { id: true } } },
-  });
-  return updated;
+  return findPaymentById(paymentId);
 }
 
 export async function failPayment(paymentId: string, reason?: string) {
-  await prisma.payment.update({
-    where: { id: paymentId },
-    data: { status: "FAILED" },
-  });
+  await updatePayment(paymentId, { status: "FAILED" });
   void reason;
 }

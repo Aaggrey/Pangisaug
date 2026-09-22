@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { findVisitBookingById, updateVisitBooking, findPropertyById } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import type { BookingStatus } from "@prisma/client";
+
+type BookingStatus = "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED";
 
 export async function PATCH(
   req: Request,
@@ -18,22 +19,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  const booking = await prisma.visitBooking.findUnique({
-    where: { id },
-    include: { property: { select: { landlordId: true } } },
-  });
+  const booking = await findVisitBookingById(id);
   if (!booking) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const isLandlordOwner = booking.property.landlordId === user.id;
+  const property = await findPropertyById(booking.propertyId);
+  const isLandlordOwner = property?.landlordId === user.id;
   const isAdmin = user.role === "ADMIN";
   if (!isLandlordOwner && !isAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const updated = await prisma.visitBooking.update({
-    where: { id },
-    data: { status: status as BookingStatus },
-  });
-
+  const updated = await updateVisitBooking(id, { status: status as BookingStatus });
   return NextResponse.json({ booking: updated });
 }
