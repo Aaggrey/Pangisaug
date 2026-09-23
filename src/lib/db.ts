@@ -8,7 +8,14 @@ const pool = new Pool({
       : false,
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 30000,
+  // Neon's compute autosuspends after 5 idle minutes; the first query after a
+  // wake-up has to establish a fresh SSL connection, which can take >10s.
+  // Bumping connectTimeoutMillis past that window lets the cold start finish
+  // instead of aborting with "connection terminated due to connection timeout".
+  // maxUses recycles pooled sockets before Neon's server-side lifetime cap
+  // kills them mid-query (its default is ~5 minutes per pooled connection).
+  maxUses: 2000,
 });
 
 // ---------------------------------------------------------------------------
